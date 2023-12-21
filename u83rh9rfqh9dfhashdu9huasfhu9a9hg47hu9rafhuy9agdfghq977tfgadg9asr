@@ -1,0 +1,998 @@
+engine.exec("play doors\\door_metal_thin_close2")
+
+gs = gui.set_visible
+consolepr = utils.print_console
+lbox = gui.add_listbox
+chbox = gui.add_checkbox
+colorp = gui.add_colorpicker
+
+
+
+
+
+
+local refs = {
+    dormant = gui.get_config_item("rage>aimbot>aimbot>target dormant"),
+    hideshots = gui.get_config_item("rage>aimbot>aimbot>hide shot"),
+    doubletap = gui.get_config_item("rage>aimbot>aimbot>double tap"),
+    safety = gui.get_config_item("rage>aimbot>aimbot>force extra safety"),
+    hs = gui.get_config_item("rage>aimbot>aimbot>Headshot only"),
+    enable = gui.get_config_item("rage>anti-aim>angles>anti-aim"),
+    pitch = gui.get_config_item("rage>anti-aim>angles>pitch"),
+    yaw = gui.get_config_item("rage>anti-aim>angles>yaw"),
+    yawadd = gui.get_config_item("rage>anti-aim>angles>yaw add"),
+    add = gui.get_config_item("rage>anti-aim>angles>add"),
+    target = gui.get_config_item("rage>anti-aim>angles>at fov target"),
+    spin = gui.get_config_item("rage>anti-aim>angles>spin"),
+    spinrange = gui.get_config_item("rage>anti-aim>angles>spin range"),
+    spinspeed = gui.get_config_item("rage>anti-aim>angles>spin speed"),
+    jitter = gui.get_config_item("rage>anti-aim>angles>jitter"),
+    random = gui.get_config_item("rage>anti-aim>angles>random"),
+    jitterrange = gui.get_config_item("rage>anti-aim>angles>jitter range"),
+    manualoverride = gui.get_config_item("rage>anti-aim>angles>antiaim override"),
+    back = gui.get_config_item("rage>anti-aim>angles>back"),
+    left = gui.get_config_item("rage>anti-aim>angles>left"),
+    right = gui.get_config_item("rage>anti-aim>angles>right"),
+    freestand = gui.get_config_item("rage>anti-aim>angles>freestand"),
+    mode = gui.get_config_item("rage>anti-aim>fakelag>mode"),
+    limitfl = gui.get_config_item("rage>anti-aim>fakelag>limit"),
+    fake = gui.get_config_item("rage>anti-aim>desync>fake"),
+    fakeamount = gui.get_config_item("rage>anti-aim>desync>fake amount"),
+    compensate = gui.get_config_item("rage>anti-aim>desync>compensate angle"),
+    freestandfake = gui.get_config_item("rage>anti-aim>desync>freestand fake"),
+    flipjitter = gui.get_config_item("rage>anti-aim>desync>flip fake with jitter"),
+    legs = gui.get_config_item("rage>anti-aim>desync>leg slide"),
+    rolllean = gui.get_config_item("rage>anti-aim>desync>roll lean"),
+    leanamount = gui.get_config_item("rage>anti-aim>desync>lean amount"),
+    lean = gui.get_config_item("rage>anti-aim>desync>ensure lean"),
+    fliplean = gui.get_config_item("rage>anti-aim>desync>flip lean with jitter"),
+    fakeduck = gui.get_config_item("misc>movement>fake duck"),
+    headshot = gui.get_config_item("rage>aimbot>aimbot>headshot only")
+}
+
+
+local lFeetYaw = 0
+local Angle2   = 0
+
+
+ffi.cdef [[
+    typedef uintptr_t (__thiscall* GetClientEntity_4242425_t)(void*, int);
+
+    typedef struct c_animstate
+    {
+      char         pad0[0x60];
+      void*        pEntity;
+      void*        pActiveWeapon;
+      void*        pLastActiveWeapon;
+      float        flLastUpdateTime;
+      int          iLastUpdateFrame;
+      float        flLastUpdateIncrement;
+      float        flEyeYaw;
+      float        flEyePitch;
+      float        flGoalFeetYaw;
+      float        flLastFeetYaw;
+      float        flMoveYaw;
+      float        flLastMoveYaw;
+      float        flLeanAmount;
+    } CCSGOPlayerAnimationState_534535_t;
+]]
+
+
+
+local FFI = {
+    Update = {
+        AnimStateOffset = 0x9960,
+    },
+    setup = function(self)
+        -- Get Entity
+        self.ClientEntityList = ffi.cast("void***", utils.find_interface("client.dll", "VClientEntityList003"))
+        self.GetClientEntity = ffi.cast("GetClientEntity_4242425_t", self.ClientEntityList[0][3])
+
+        self.GetEntityAddress = function(ent_index)
+            return ffi.cast('GetClientEntity_4242425_t', self.ClientEntityList[0][3])(self.ClientEntityList, ent_index)
+        end
+
+        self.GetAnimationState = function(entity)
+            if not entity then return end
+            return ffi.cast('struct c_animstate**',
+                self.GetEntityAddress(entity:get_index()) + self.Update.AnimStateOffset)[0]
+        end
+    end
+}
+FFI:setup()
+
+
+
+local lerp = function(precenteges, start, destination) return start + (destination - start) * precenteges end
+ffi.cdef [[
+    typedef int(__thiscall* get_clipboard_text_count)(void*);
+	typedef void(__thiscall* set_clipboard_text)(void*, const char*, int);
+	typedef void(__thiscall* get_clipboard_text)(void*, int, const char*, int);
+
+    typedef void*(__thiscall* get_client_entity_t)(void*, int);
+
+    typedef struct
+    {
+        char pad20[24];
+        uint32_t m_nSequence;
+        float m_flPrevCycle;
+        float m_flWeight;
+        char pad20[8];
+        float m_flCycle;
+        void *m_pOwner;
+        char pad_0038[ 4 ];
+    } animation_layer_t;
+
+    typedef struct
+    {
+        char pad[ 3 ];
+        char m_bForceWeaponUpdate; //0x4
+        char pad1[ 91 ];
+        void* m_pBaseEntity; //0x60
+        void* m_pActiveWeapon; //0x64
+        void* m_pLastActiveWeapon; //0x68
+        float m_flLastClientSideAnimationUpdateTime; //0x6C
+        int m_iLastClientSideAnimationUpdateFramecount; //0x70
+        float m_flAnimUpdateDelta; //0x74
+        float m_flEyeYaw; //0x78
+        float m_flPitch; //0x7C
+        float m_flGoalFeetYaw; //0x80
+        float m_flCurrentFeetYaw; //0x84
+        float m_flCurrentTorsoYaw; //0x88
+        float m_flUnknownVelocityLean; //0x8C
+        float m_flLeanAmount; //0x90
+        char pad2[ 4 ];
+        float m_flFeetCycle; //0x98
+        float m_flFeetYawRate; //0x9C
+        char pad3[ 4 ];
+        float m_fDuckAmount; //0xA4
+        float m_fLandingDuckAdditiveSomething; //0xA8
+        char pad4[ 4 ];
+        float m_vOriginX; //0xB0
+        float m_vOriginY; //0xB4
+        float m_vOriginZ; //0xB8
+        float m_vLastOriginX; //0xBC
+        float m_vLastOriginY; //0xC0
+        float m_vLastOriginZ; //0xC4
+        float m_vVelocityX; //0xC8
+        float m_vVelocityY; //0xCC
+        char pad5[ 4 ];
+        float m_flUnknownFloat1; //0xD4
+        char pad6[ 8 ];
+        float m_flUnknownFloat2; //0xE0
+        float m_flUnknownFloat3; //0xE4
+        float m_flUnknown; //0xE8
+        float m_flSpeed2D; //0xEC
+        float m_flUpVelocity; //0xF0
+        float m_flSpeedNormalized; //0xF4
+        float m_flFeetSpeedForwardsOrSideWays; //0xF8
+        float m_flFeetSpeedUnknownForwardOrSideways; //0xFC
+        float m_flTimeSinceStartedMoving; //0x100
+        float m_flTimeSinceStoppedMoving; //0x104
+        bool m_bOnGround; //0x108
+        bool m_bInHitGroundAnimation; //0x109
+        float m_flTimeSinceInAir; //0x10A
+        float m_flLastOriginZ; //0x10E
+        float m_flHeadHeightOrOffsetFromHittingGroundAnimation; //0x112
+        float m_flStopToFullRunningFraction; //0x116
+        char pad7[ 4 ]; //0x11A
+        float m_flMagicFraction; //0x11E
+        char pad8[ 60 ]; //0x122
+        float m_flWorldForce; //0x15E
+        char pad9[ 462 ]; //0x162
+        float m_flMaxYaw; //0x334
+    } anim_state_t;
+    typedef struct
+    {
+        char   pad0[0x14];             //0x0000
+        bool        bProcessingMessages;    //0x0014
+        bool        bShouldDelete;          //0x0015
+        char   pad1[0x2];              //0x0016
+        int         iOutSequenceNr;         //0x0018 last send outgoing sequence number
+        int         iInSequenceNr;          //0x001C last received incoming sequence number
+        int         iOutSequenceNrAck;      //0x0020 last received acknowledge outgoing sequence number
+        int         iOutReliableState;      //0x0024 state of outgoing reliable data (0/1) flip flop used for loss detection
+        int         iInReliableState;       //0x0028 state of incoming reliable data
+        int         iChokedPackets;         //0x002C number of choked packets
+    } INetChannel; // Size: 0x0444
+
+    typedef bool(__thiscall* file_exists_t)(void* this, const char* pFileName, const char* pPathID);
+    typedef int BOOL;
+    typedef long LONG;
+    typedef unsigned long HWND;
+    typedef struct{
+        LONG x, y;
+    }POINT, *LPPOINT;
+    typedef unsigned long DWORD, *PDWORD, *LPDWORD;
+
+    typedef struct {
+        DWORD  nLength;
+        void* lpSecurityDescriptor;
+        BOOL   bInheritHandle;
+    } SECURITY_ATTRIBUTES, *PSECURITY_ATTRIBUTES, *LPSECURITY_ATTRIBUTES;
+
+    short GetAsyncKeyState(int vKey);
+    typedef struct mask {
+        char m_pDriverName[512];
+        unsigned int m_VendorID;
+        unsigned int m_DeviceID;
+        unsigned int m_SubSysID;
+        unsigned int m_Revision;
+        int m_nDXSupportLevel;
+        int m_nMinDXSupportLevel;
+        int m_nMaxDXSupportLevel;
+        unsigned int m_nDriverVersionHigh;
+        unsigned int m_nDriverVersionLow;
+        int64_t pad_0;
+        union {
+            int xuid;
+            struct {
+                int xuidlow;
+                int xuidhigh;
+            };
+        };
+        char name[128];
+        int userid;
+        char guid[33];
+        unsigned int friendsid;
+        char friendsname[128];
+        bool fakeplayer;
+        bool ishltv;
+        unsigned int customfiles[4];
+        unsigned char filesdownloaded;
+    };
+    typedef int(__thiscall* get_current_adapter_fn)(void*);
+    typedef void(__thiscall* get_adapters_info_fn)(void*, int adapter, struct mask& info);
+    typedef bool(__thiscall* file_exists_t)(void* this, const char* pFileName, const char* pPathID);
+    typedef long(__thiscall* get_file_time_t)(void* this, const char* pFileName, const char* pPathID);
+]]
+local things = {
+    id = "other",
+    weapon = "knife",
+}
+local helpers = {
+    get_hwid = function()
+        material_system = utils.find_interface('materialsystem.dll', 'VMaterialSystem080')
+        material_interface = ffi.cast('void***', material_system)[0]
+
+        get_current_adapter = ffi.cast('get_current_adapter_fn', material_interface[25])
+        get_adapter_info = ffi.cast('get_adapters_info_fn', material_interface[26])
+
+        current_adapter = get_current_adapter(material_interface)
+
+        adapter_struct = ffi.new('struct mask')
+        get_adapter_info(material_interface, current_adapter, adapter_struct)
+
+        driverName = tostring(ffi.string(adapter_struct['m_pDriverName']))
+        vendorId = tostring(adapter_struct['m_VendorID'])
+        deviceId = tostring(adapter_struct['m_DeviceID'])
+        class_ptr = ffi.typeof("void***")
+        rawfilesystem = utils.find_interface("filesystem_stdio.dll", "VBaseFileSystem011")
+        filesystem = ffi.cast(class_ptr, rawfilesystem)
+        file_exists = ffi.cast("file_exists_t", filesystem[0][10])
+        get_file_time = ffi.cast("get_file_time_t", filesystem[0][13])
+
+        function bruteforce_directory()
+            for i = 65, 90 do
+                directory = string.char(i) .. ":\\Windows\\Setup\\State\\State.ini"
+
+                if (file_exists(filesystem, directory, "ROOT")) then
+                    return directory
+                end
+            end
+            return nil
+        end
+
+        directory = bruteforce_directory()
+        install_time = get_file_time(filesystem, directory, "ROOT")
+        hardwareID = install_time * 2
+        m_id = ((vendorId * deviceId) * 2) + hardwareID
+        return m_id
+    end,
+    get_weapon = function()
+        local player = entities.get_entity(engine.get_local_player())
+        if not player then return "ssg08>scout" end
+        if not player:is_alive() then return "ssg08>scout" end
+        local weapon = player:get_prop("m_hActiveWeapon")
+        if not weapon then return "ssg08>scout" end
+
+        local weapon = entities.get_entity_from_handle(weapon)
+        if not weapon then return "ssg08>scout" end
+
+        things.weapon = utils.get_weapon_info(weapon:get_prop("m_iItemDefinitionIndex")).console_name
+
+        --Weapon id for min-damage
+        if things.weapon == "weapon_g3sg1" or things.weapon == "weapon_scar20" then
+            return "autosniper>auto"
+        elseif things.weapon == "weapon_ssg08" then
+            return "ssg08>scout"
+        elseif things.weapon == "weapon_awp" then
+            return "awp>awp"
+        elseif things.weapon == "weapon_revolver" or things.weapon == "weapon_deagle" then
+            return "heavy_pistol>heavy pistols"
+        elseif things.weapon == "weapon_glock" or things.weapon == "weapon_usp_silencer" or things.weapon == "weapon_hkp2000" or things.weapon == "weapon_elite" or things.weapon == "weapon_p250" or things.weapon == "weapon_fiveseven" or things.weapon == "weapon_tec9" or things.weapon == "weapon_cz75a" then
+            return "pistol>pistols"
+        else
+            return "other>other"
+        end
+    end,
+    get_weapon_name = function()
+        local player = entities.get_entity(engine.get_local_player())
+        if not player then return " " end
+        if not player:is_alive() then return " " end
+        local weapon = player:get_prop("m_hActiveWeapon")
+        if not weapon then return " " end
+
+        local weapon = entities.get_entity_from_handle(weapon)
+        if not weapon then return " " end
+
+        things.weapon = utils.get_weapon_info(weapon:get_prop("m_iItemDefinitionIndex")).console_name
+        return things.weapon
+    end,
+}
+
+local Math = {
+    time_to_ticks = function(t)
+        return math.floor(0.5 + (t / global_vars.interval_per_tick))
+    end,
+    round         = function(value, decimals)
+        local multiplier = 10.0 ^ (decimals or 0.0)
+        return math.floor(value * multiplier + 0.5) / multiplier
+    end,
+    clamp         = function(x, min, max)
+        if x < min then return min end
+        if x > max then return max end
+        if x == nil then return min end
+        return x
+    end,
+    normalize_yaw = function(angle)
+        if angle < -180 then
+            angle = angle + 360
+        end
+        if angle > 180 then
+            angle = angle - 360
+        end
+        return angle
+    end,
+    lerp          = function(start, _end, time, do_extraanim)
+        if (not do_extraanim and math.floor(start) == _end) then
+            return
+                _end
+        end
+        time = global_vars.frametime * (time * 175)
+        if time < 0 then
+            time = 0.01
+        elseif time > 1 then
+            time = 1
+        end
+        return Math.round((_end - start) * time + start, 2)
+    end,
+    flerp         = function(a, b, t)
+        return a + t * (b - a)
+    end,
+    elerp         = function(self, start, end_, speed, delta)
+        if (math.abs(start - end_) < (delta or 0.01)) then
+            return end_
+        end
+        speed = speed or 0.095
+        local time = global_vars.frametime * (175 * speed)
+        return ((end_ - start) * time + start)
+    end,
+}
+
+
+
+consolepr("[Hybrid.lua] » Connecting to servers... \n", render.color("#A6C1F4"))
+consolepr("[Hybrid.lua] » HWID Accepted! \n", render.color("#C6F4A6"))
+
+consolepr("[Hybrid.lua] » Connecting to servers... \n", render.color("#A6C1F4"))
+
+luauser = "Developer"
+build = "Beta"
+lastupd = "Last update: 18.12.2023 13:03"
+luausers = "1"
+
+-- SCRIPT STARTS HERE
+local enums = {
+    states = { "Standing", "Moving", "Air", "Air+C", "Walking", "Ducking" },
+    menu_states = { "ST~ ", "MV~ ", "AR~ ", "A+C~ ", "WK~ ", "DC~  " }
+}
+local menu = {
+
+    name = lbox("   ", "lua>tab a", -1, false, { "                    Hybrid.lua" }),
+    tabs = lbox("  ", "lua>tab a", -1, false, { "[»] Home", "[»] AA System", "[»] Features", "[»] AA Improvers" }),
+    visuals = {
+        informationslistbox = lbox("                                ", "lua>tab b", 1, false, { "                   Informations"}),
+        homelistbox = lbox("        ", "lua>tab b", 3, false, {"+ Name: " .. luauser .. "\n+ Build: " .. build .. "\n+ " .. lastupd .. "\n+ Lua users: " .. luausers }),
+        visualslistbox = lbox("            ", "lua>tab b", 1, false, { "                      Visuals"}),
+        indicators = chbox("Indicators", "lua>tab b"),
+        theme = colorp("lua>tab b>Indicators", true),
+        killsay = chbox("Killsay", "lua>tab b"),    
+        rsmode = chbox("Resolver Reseter", "lua>tab b"),       
+    },
+
+
+    aaimprovers = {
+        improverslistbox = lbox("                      ", "lua>tab b", 1, false, { "                 AA Improvers"})
+    },
+
+
+    anti_aim = {
+        player_state = gui.add_combo("Current state", "lua>tab b", enums.states),
+        angle_selection = gui.add_listbox("Current angle:", "lua>tab a", -1, false, { "Real angle", "Fake angle" }),
+    },
+}
+
+for i = 1, #enums.states do
+    menu.anti_aim[i] = {
+        pitch = gui.add_combo(enums.menu_states[i] .. "Pitch", "lua>tab b", { "None", "Down", "Up", "Zero" }),
+        yaw = gui.add_combo(enums.menu_states[i] .. "Yaw", "lua>tab b", { "None", "Backwards", "Zero", "Random" }),
+        yawbase = gui.add_combo(enums.menu_states[i] .. "Yaw base", "lua>tab b", { "Crosshair based", "At targets" }),
+        yawadd = gui.add_checkbox(enums.menu_states[i] .. "Yaw add", "lua>tab b"),
+        yawtype = gui.add_combo(enums.menu_states[i] .. "Yaw add type", "lua>tab b",
+            { "Static", "Side based", "Slowed", "3-way", "5-way" }),
+        staticadd = gui.add_slider(enums.menu_states[i] .. "Static yaw", "lua>tab b", -180, 180, 1),
+        leftadd = gui.add_slider(enums.menu_states[i] .. "Left yaw", "lua>tab b", -180, 180, 1),
+        rightadd = gui.add_slider(enums.menu_states[i] .. "Right yaw", "lua>tab b", -180, 180, 1),
+        slowspeed = gui.add_slider(enums.menu_states[i] .. "Slowed speed", "lua>tab b", 2, 8, 1),
+        way1 = gui.add_slider(enums.menu_states[i] .. "Way 1", "lua>tab b", -180, 180, 1),
+        way2 = gui.add_slider(enums.menu_states[i] .. "Way 2", "lua>tab b", -180, 180, 1),
+        way3 = gui.add_slider(enums.menu_states[i] .. "Way 3", "lua>tab b", -180, 180, 1),
+        way4 = gui.add_slider(enums.menu_states[i] .. "Way 4", "lua>tab b", -180, 180, 1),
+        way5 = gui.add_slider(enums.menu_states[i] .. "Way 5", "lua>tab b", -180, 180, 1),
+        spin = gui.add_checkbox(enums.menu_states[i] .. "Spin", "lua>tab b"),
+        spinrange = gui.add_slider(enums.menu_states[i] .. "Spin range", "lua>tab b", 0, 360, 1),
+        spinspeed = gui.add_slider(enums.menu_states[i] .. "Spin speed", "lua>tab b", 0, 360, 1),
+        jitter = gui.add_checkbox(enums.menu_states[i] .. "Jitter", "lua>tab b"),
+        jitterrandom = gui.add_checkbox(enums.menu_states[i] .. "Random jitter", "lua>tab b"),
+        jitterrange = gui.add_slider(enums.menu_states[i] .. "Jitter range", "lua>tab b", 0, 360, 1),
+        fake = gui.add_checkbox(enums.menu_states[i] .. "Fake", "lua>tab b"),
+        faketype = gui.add_combo(enums.menu_states[i] .. "Fake type", "lua>tab b",
+            { "Static", "Side based" }),
+        desyncadd = gui.add_slider(enums.menu_states[i] .. "Static desync add", "lua>tab b", -100, 100, 1),
+        leftdesync = gui.add_slider(enums.menu_states[i] .. "Desync left", "lua>tab b", -100, 100, 1),
+        rightdesync = gui.add_slider(enums.menu_states[i] .. "Desync right", "lua>tab b", -100, 100, 1),
+        comptype = gui.add_combo(enums.menu_states[i] .. "Compensate fake type", "lua>tab b",
+            { "Static", "Side based" }),
+        compadd = gui.add_slider(enums.menu_states[i] .. "Static compensate add", "lua>tab b", 0, 100, 1),
+        leftcomp = gui.add_slider(enums.menu_states[i] .. "Compensate left", "lua>tab b", 0, 100, 1),
+        rightcomp = gui.add_slider(enums.menu_states[i] .. "Compensate right", "lua>tab b", 0, 100, 1),
+        freestandfake = gui.add_combo(enums.menu_states[i] .. "Freestand fake", "lua>tab b",
+            { "None", "Normal", "Opposite" }),
+        flipfake = gui.add_checkbox(enums.menu_states[i] .. "Flip fake with jitter", "lua>tab b")
+    }
+end
+
+
+
+
+
+local screensizeX, screensizeY = render.get_screen_size()
+local anim = { scope = 0, hybrid_index = 0, hybrid_anim_speed = 0.03 }
+local alpha_fade_duration = 4
+
+local hybrid_text = "H Y B R I D"
+local hybrid_length = #hybrid_text
+local function text_animation()
+    local forward_index = anim.hybrid_index % (hybrid_length * 2)
+    local backward_index = hybrid_length * 2 - forward_index
+
+    local hybrid_substring
+    if forward_index <= hybrid_length then
+        hybrid_substring = string.sub(hybrid_text, 1, math.ceil(forward_index))
+
+        if hybrid_substring:sub(-1) == " " then
+            hybrid_substring = hybrid_substring:sub(1, -2)
+        end
+    else
+        hybrid_substring = string.sub(hybrid_text, 1, math.ceil(backward_index))
+    end
+
+    local hybrid_alpha = math.abs(1 * math.cos(2 * math.pi * (global_vars.curtime / alpha_fade_duration)))
+
+    render.text(render.font_esp,
+        screensizeX / 2 - render.get_text_size(render.font_esp, hybrid_substring) / 2 + math.floor(anim.scope),
+        screensizeY / 2 + 18, hybrid_substring, render.color(255, 255, 255, 255))
+end
+
+--CLANTAG
+
+local clantag = chbox("Clantag", "lua>tab b")
+
+local HybridCL = {
+    "» H  ",
+    "» Hy   ",
+    "» Hyb   ",
+    "» Hybr   ",
+    "» Hybri   ",
+    "» Hybrid   ",
+    "» Hybrid   ",
+    "» Hybri   ",
+    "» Hybr   ",
+    "» Hyb   ",
+    "» Hy  ",
+    "» H  ",
+}
+
+local olstring = ""
+
+function HYBRIDCL()
+    local hybridc = clantag:get_bool()
+    if hybridc then
+        local curtime = math.floor((global_vars.curtime) * 3)
+        local stringh = HybridCL[curtime % #HybridCL + 1]
+        if stringh ~= olstring then
+            utils.set_clan_tag(stringh)
+            olstring = stringh
+        end
+    else
+        utils.set_clan_tag(" ")
+        olstring = "" 
+    end
+end
+
+-- PHRASES KILLSAY
+
+local phrases = {
+    Thrashtalk = {
+        "owned by hybrid lmao",
+        "hybrid lua top lua 1 botik",
+        "still no hybrid? dang..",
+        "1",
+        "واحد",
+        "niger",
+        "بوت سخيف"
+    }
+}
+
+on_player_death = function(event)
+    if not menu.visuals.killsay:get_bool() or not engine.is_in_game() or not entities.get_entity(engine.get_local_player()):is_valid() then return end
+
+    local message = "say " .. phrases.Thrashtalk[utils.random_int(1, #phrases.Thrashtalk)]
+
+    if engine.get_player_for_user_id(event:get_int("attacker")) == engine.get_local_player() and engine.get_player_for_user_id(event:get_int("userid")) ~= engine.get_local_player() then
+        engine.exec(message)
+    end
+end
+
+
+menu.anti_aim.safe_knife,menu.anti_aim.safe_zeus = gui.add_multi_combo("Safe head", "lua>tab b", {"Knife", "Zeus"})
+menu.anti_aim.disable_modifiers, menu.anti_aim.disable_desync_modifiers = gui.add_multi_combo("Safe manuals", "lua>tab b", {"Disable yaw modifiers", "Static desync"})
+
+local way         = 0
+local side        = 0
+local tick_switch = 0
+local playerstate = 0
+local air_tick    = 0
+local in_air      = false
+anim.key = 0
+local callbacks   = {
+    on_paint = {
+        gui = function()
+            if not gui.is_menu_open() then return end
+            local tab = menu.tabs:get_int()
+            --VISUALS TAB
+            gs("lua>tab b>Indicators", tab == 2)
+            gs("lua>tab b>Resolver Reseter", tab == 2)
+            gs("lua>tab b>Killsay", tab == 2)
+            gs("lua>tab b>Clantag", tab == 2)
+            gs("lua>tab b>            ", tab == 2)
+            gs("lua>tab b>                                ", tab == 0)
+            gs("lua>tab b>        ", tab == 0)
+            gs("lua>tab b>Safe head", tab == 3)
+            gs("lua>tab b>Safe manuals", tab == 3)
+            gs("lua>tab b>                      ", tab == 3)
+            local angle = menu.anti_aim.angle_selection:get_int()
+            local states = menu.anti_aim.player_state:get_int() + 1
+            gui.set_visible("lua>tab a>current angle:", tab == 1)
+            gui.set_visible("lua>tab b>current state", tab == 1)
+
+            for i = 1, #enums.states do
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "pitch", tab == 1 and angle == 0 and states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "yaw", tab == 1 and angle == 0 and states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "yaw base",
+                    tab == 1 and angle == 0 and states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "yaw add",
+                    tab == 1 and angle == 0 and states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "yaw add type",
+                    tab == 1 and angle == 0 and menu.anti_aim[i].yawadd:get_bool() and states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "static yaw",
+                    tab == 1 and angle == 0 and menu.anti_aim[i].yawtype:get_int() == 0 and
+                    menu.anti_aim[i].yawadd:get_bool() and
+                    states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "left yaw",
+                    tab == 1 and angle == 0 and
+                    (menu.anti_aim[i].yawtype:get_int() == 1 or menu.anti_aim[i].yawtype:get_int() == 2) and
+                    menu.anti_aim[i].yawadd:get_bool() and states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "right yaw",
+                    tab == 1 and angle == 0 and
+                    (menu.anti_aim[i].yawtype:get_int() == 1 or menu.anti_aim[i].yawtype:get_int() == 2) and
+                    menu.anti_aim[i].yawadd:get_bool() and states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "slowed speed",
+                    tab == 1 and angle == 0 and menu.anti_aim[i].yawtype:get_int() == 2 and
+                    menu.anti_aim[i].yawadd:get_bool() and
+                    states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "way 1",
+                    tab == 1 and angle == 0 and menu.anti_aim[i].yawtype:get_int() > 2 and
+                    menu.anti_aim[i].yawadd:get_bool() and
+                    states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "way 2",
+                    tab == 1 and angle == 0 and menu.anti_aim[i].yawtype:get_int() > 2 and
+                    menu.anti_aim[i].yawadd:get_bool() and
+                    states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "way 3",
+                    tab == 1 and angle == 0 and menu.anti_aim[i].yawtype:get_int() > 2 and
+                    menu.anti_aim[i].yawadd:get_bool() and
+                    states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "way 4",
+                    tab == 1 and angle == 0 and menu.anti_aim[i].yawtype:get_int() > 3 and
+                    menu.anti_aim[i].yawadd:get_bool() and
+                    states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "way 5",
+                    tab == 1 and angle == 0 and menu.anti_aim[i].yawtype:get_int() > 3 and
+                    menu.anti_aim[i].yawadd:get_bool() and
+                    states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "spin", tab == 1 and angle == 0 and states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "spin range",
+                    tab == 1 and angle == 0 and menu.anti_aim[i].spin:get_bool() and states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "spin speed",
+                    tab == 1 and angle == 0 and menu.anti_aim[i].spin:get_bool() and states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "jitter", tab == 1 and angle == 0 and states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "random jitter",
+                    tab == 1 and angle == 0 and menu.anti_aim[i].jitter:get_bool() and states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "jitter range",
+                    tab == 1 and angle == 0 and menu.anti_aim[i].jitter:get_bool() and states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "fake", tab == 1 and angle == 1 and states == i)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "fake type",
+                    tab == 1 and angle == 1 and states == i and menu.anti_aim[i].fake:get_bool())
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "static desync add",
+                    tab == 1 and angle == 1 and states == i and menu.anti_aim[i].fake:get_bool() and
+                    menu.anti_aim[i].faketype:get_int() == 0)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "desync left",
+                    tab == 1 and angle == 1 and states == i and menu.anti_aim[i].fake:get_bool() and
+                    (menu.anti_aim[i].faketype:get_int() == 1 or menu.anti_aim[i].faketype:get_int() == 2))
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "desync right",
+                    tab == 1 and angle == 1 and states == i and menu.anti_aim[i].fake:get_bool() and
+                    (menu.anti_aim[i].faketype:get_int() == 1 or menu.anti_aim[i].faketype:get_int() == 2))
+
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "compensate fake type",
+                    tab == 1 and angle == 1 and states == i and menu.anti_aim[i].fake:get_bool())
+
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "static compensate add",
+                    tab == 1 and angle == 1 and states == i and menu.anti_aim[i].fake:get_bool() and
+                    menu.anti_aim[i].comptype:get_int() == 0)
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "compensate left",
+                    tab == 1 and angle == 1 and states == i and menu.anti_aim[i].fake:get_bool() and
+                    (menu.anti_aim[i].comptype:get_int() == 1))
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "compensate right",
+                    tab == 1 and angle == 1 and states == i and menu.anti_aim[i].fake:get_bool() and
+                    (menu.anti_aim[i].comptype:get_int() == 1))
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "freestand fake",
+                    tab == 1 and angle == 1 and states == i and menu.anti_aim[i].fake:get_bool())
+                gui.set_visible("lua>tab b>" .. enums.menu_states[i] .. "flip fake with jitter",
+                    tab == 1 and angle == 1 and states == i and menu.anti_aim[i].fake:get_bool())
+
+            end
+        end,
+        indicators = function()
+            if not menu.visuals.indicators:get_bool() or not engine.is_in_game() or not entities.get_entity(engine.get_local_player()):is_valid() then return end
+            local sort = 0
+            anim.scope = lerp(5 / 100, anim.scope,
+                entities.get_entity(engine.get_local_player()):get_prop("m_bIsScoped") and 60 or 0)
+        
+            anim.hybrid_index = (anim.hybrid_index + anim.hybrid_anim_speed) % ((hybrid_length + 1) * 2)
+            local bind_list = {
+                {
+                    name = "<|||||>",
+                    path = refs.doubletap,
+                    color = info.fatality.can_fastfire and render.color(211, 211, 211) or render.color(255, 65, 65)
+                };
+                {
+                    name = "HS",
+                    path = refs.hideshots,
+                    color = render.color(255, 255, 255);
+                };
+                {
+                    name = "DMG",
+                    path = gui.get_config_item("rage>aimbot>" .. helpers.get_weapon() .. ">override"),
+                    color = render.color(255, 255, 255, 200);
+                };
+                {
+                    name = "PEEK",
+                    path = gui.get_config_item("misc>movement>peek assist"),
+                    color = render.color(menu.visuals.theme:get_color().r, menu.visuals.theme:get_color().g, menu.visuals.theme:get_color().b, 255)
+                }
+            }
+            text_animation()
+        
+            local alpha_value = math.abs(1 * math.cos(2 * math.pi * (global_vars.curtime / alpha_fade_duration)))
+            render.text(render.font_esp,
+                screensizeX / 2 - render.get_text_size(render.font_esp, "[Beta]") / 2 + math.floor(anim.scope),
+                screensizeY / 2 + 10, "[Beta]",
+                render.color(menu.visuals.theme:get_color().r, menu.visuals.theme:get_color().g,
+                    menu.visuals.theme:get_color().b, 255 * alpha_value))
+        
+            for k, v in pairs(bind_list) do
+                if v.path:get_bool() then
+                    local text_color = v.name == "PEEK" and render.color(
+                        menu.visuals.theme:get_color().r, menu.visuals.theme:get_color().g,
+                        menu.visuals.theme:get_color().b, 255 * alpha_value) or v.color
+        
+                    render.text(render.font_esp,
+                        screensizeX / 2 - render.get_text_size(render.font_esp, v.name) / 2 + math.floor(anim.scope),
+                        screensizeY / 2 + 26 + sort, v.name, text_color)
+        
+                    sort = sort + 8
+                end
+            end
+
+
+--[[
+            if refs.doubletap:get_bool() then
+                render.text(render.font_esp,
+                    screensizeX / 2 - render.get_text_size(render.font_esp, "dt") / 2 + math.floor(anim.scope),
+                    screensizeY / 2 + 27, "dt", render.color(255, 255, 255, 255))
+                sort = sort + 10
+            end
+            if refs.hideshots:get_bool() then
+                render.text(render.font_esp,
+                    screensizeX / 2 - render.get_text_size(render.font_esp, "hs") / 2 + math.floor(anim.scope),
+                    screensizeY / 2 + 27 + sort, "hs", render.color(255, 255, 255, 255))
+                sort = sort + 10
+            end
+            if refs.headshot:get_bool() then
+                render.text(render.font_esp,
+                    screensizeX / 2 - render.get_text_size(render.font_esp, "hs only") / 2 + math.floor(anim.scope),
+                    screensizeY / 2 + 27 + sort, "hs only", render.color(255, 255, 255, 255))
+                sort = sort + 10
+            end]]
+        end,
+    },
+    on_paint_traverse = {},
+    on_create_move = {
+        builder = function()
+            local local_player = entities.get_entity(engine.get_local_player())
+
+            if not local_player then return end
+
+
+            local flag = local_player:get_prop("m_fFlags")
+            local vel_x = math.floor(local_player:get_prop("m_vecVelocity[0]"))
+            local vel_y = math.floor(local_player:get_prop("m_vecVelocity[1]"))
+            local vel_z = math.floor(local_player:get_prop("m_vecVelocity[2]"))
+            local vel = math.vec3(vel_x, vel_y, vel_z):length()
+            local ducked = local_player:get_prop('m_bDucked') == true
+            if flag == 256 or flag == 262 then
+                in_air = true
+                air_tick = global_vars.tickcount + 3
+            else
+                in_air = (air_tick > global_vars.tickcount) and true or false
+            end
+            if in_air and ducked then
+                playerstate = 4
+            else
+                if in_air then
+                    playerstate = 3
+                else
+                    if ducked then
+                        playerstate = 6
+                    else
+                        if info.fatality.in_slowwalk then
+                            playerstate = 5
+                        else
+                            if vel < 5 then
+                                playerstate = 1
+                            else
+                                playerstate = 2
+                            end
+                        end
+                    end
+                end
+            end
+
+
+
+            local Info = {
+                EyeYaw = FFI.GetAnimationState(local_player).flEyeYaw,
+                FeetYaw = Math.normalize_yaw(FFI.GetAnimationState(local_player).flGoalFeetYaw),
+            }
+
+            if info.fatality.lag_ticks == 0 then
+                lFeetYaw = Info.FeetYaw
+            end
+
+            Angle2 = Info.EyeYaw - lFeetYaw
+
+            if Info.EyeYaw <= -122 and lFeetYaw >= 0 then
+                Angle2 = 360 + Angle2
+            end
+            if Info.EyeYaw >= 122 and lFeetYaw <= 0 then
+                Angle2 = 360 - Angle2
+                Angle2 = -Angle2
+            end
+
+
+
+            if menu.anti_aim[playerstate].yawtype:get_int() == 1 then
+                if Angle2 <= 0 then
+                    side = 0
+                end
+                if Angle2 >= 0 then
+                    side = 1
+                end
+            end
+            if info.fatality.lag_ticks == 0 then
+                if menu.anti_aim[playerstate].yawtype:get_int() == 3 then
+                    way = way + 1
+                    if way > 2 then
+                        way = 0
+                    end
+                end
+                if menu.anti_aim[playerstate].yawtype:get_int() == 4 then
+                    way = way + 1
+                    if way > 4 then
+                        way = 0
+                    end
+                end
+            end
+            if menu.anti_aim[playerstate].yawtype:get_int() == 2 then
+                if info.fatality.lag_ticks == 0 then
+                    tick_switch = tick_switch + 1
+                end
+                speed_tick = menu.anti_aim[playerstate].slowspeed:get_int()
+                if tick_switch == speed_tick then
+                    side = 0
+                end
+                if tick_switch >= speed_tick * 2 then
+                    side = 1
+                    tick_switch = 0
+                end
+            end
+            refs.pitch:set_int(menu.anti_aim[playerstate].pitch:get_int())
+            refs.yaw:set_int(menu.anti_aim[playerstate].yaw:get_int())
+            refs.target:set_int(menu.anti_aim[playerstate].yawbase:get_int())
+            refs.yawadd:set_int(menu.anti_aim[playerstate].yawadd:get_int())
+            if menu.anti_aim[playerstate].yawtype:get_int() == 0 then
+                refs.add:set_int(menu.anti_aim[playerstate].staticadd:get_int())
+            end
+
+            if menu.anti_aim[playerstate].yawtype:get_int() == 1 then
+                if side == 0 then
+                    refs.add:set_int(menu.anti_aim[playerstate].leftadd:get_int())
+                end
+                if side == 1 then
+                    refs.add:set_int(menu.anti_aim[playerstate].rightadd:get_int())
+                end
+            end
+            if menu.anti_aim[playerstate].yawtype:get_int() == 2 then
+                if side == 0 then
+                    refs.add:set_int(menu.anti_aim[playerstate].leftadd:get_int())
+                end
+                if side == 1 then
+                    refs.add:set_int(menu.anti_aim[playerstate].rightadd:get_int())
+                end
+            end
+
+            if menu.anti_aim[playerstate].yawtype:get_int() == 3 then
+                if way == 0 then
+                    refs.add:set_int(menu.anti_aim[playerstate].way1:get_int())
+                end
+                if way == 1 then
+                    refs.add:set_int(menu.anti_aim[playerstate].way2:get_int())
+                end
+                if way == 2 then
+                    refs.add:set_int(menu.anti_aim[playerstate].way3:get_int())
+                end
+            end
+            if menu.anti_aim[playerstate].yawtype:get_int() == 4 then
+                if way == 0 then
+                    refs.add:set_int(menu.anti_aim[playerstate].way1:get_int())
+                end
+                if way == 1 then
+                    refs.add:set_int(menu.anti_aim[playerstate].way2:get_int())
+                end
+                if way == 2 then
+                    refs.add:set_int(menu.anti_aim[playerstate].way3:get_int())
+                end
+                if way == 3 then
+                    refs.add:set_int(menu.anti_aim[playerstate].way4:get_int())
+                end
+                if way == 4 then
+                    refs.add:set_int(menu.anti_aim[playerstate].way5:get_int())
+                end
+            end
+            refs.spin:set_int(menu.anti_aim[playerstate].spin:get_int())
+            refs.spinrange:set_int(menu.anti_aim[playerstate].spinrange:get_int())
+            refs.spinspeed:set_int(menu.anti_aim[playerstate].spinspeed:get_int())
+
+            refs.jitter:set_int(menu.anti_aim[playerstate].jitter:get_int())
+            refs.random:set_int(menu.anti_aim[playerstate].jitterrandom:get_int())
+            refs.jitterrange:set_int(menu.anti_aim[playerstate].jitterrange:get_int())
+
+            refs.fake:set_int(menu.anti_aim[playerstate].fake:get_int())
+            if menu.anti_aim[playerstate].faketype:get_int() == 0 then
+                refs.fakeamount:set_int(menu.anti_aim[playerstate].desyncadd:get_int())
+            end
+
+            if menu.anti_aim[playerstate].faketype:get_int() == 1 then
+                if side == 0 then
+                    refs.fakeamount:set_int(menu.anti_aim[playerstate].leftdesync:get_int())
+                end
+                if side == 1 then
+                    refs.fakeamount:set_int(menu.anti_aim[playerstate].rightdesync:get_int())
+                end
+            end
+            if menu.anti_aim[playerstate].faketype:get_int() == 2 then
+                if side == 0 then
+                    refs.fakeamount:set_int(menu.anti_aim[playerstate].leftdesync:get_int())
+                end
+                if side == 1 then
+                    refs.fakeamount:set_int(menu.anti_aim[playerstate].rightdesync:get_int())
+                end
+            end
+
+            if menu.anti_aim[playerstate].comptype:get_int() == 0 then
+                refs.compensate:set_int(menu.anti_aim[playerstate].compadd:get_int())
+            end
+
+            if menu.anti_aim[playerstate].comptype:get_int() == 1 then
+                if side == 0 then
+                    refs.compensate:set_int(menu.anti_aim[playerstate].leftcomp:get_int())
+                end
+                if side == 1 then
+                    refs.compensate:set_int(menu.anti_aim[playerstate].rightcomp:get_int())
+                end
+            end
+            refs.freestandfake:set_int(menu.anti_aim[playerstate].freestandfake:get_int())
+            refs.flipjitter:set_int(menu.anti_aim[playerstate].flipfake:get_int())
+
+            if refs.left:get_bool() or refs.right:get_bool() or refs.freestand:get_bool() then
+                if menu.anti_aim.disable_desync_modifiers:get_bool() then
+                    refs.yawadd:set_int(0)
+                    refs.spin:set_int(0)
+                    refs.jitter:set_int(0)
+                end
+                if menu.anti_aim.disable_desync_modifiers:get_bool() then
+                    refs.fake:set_int(1)
+                    refs.fakeamount:set_int(-100)
+                    refs.compensate:set_int(100)
+                    refs.flipjitter:set_int(0)
+                end
+            end
+
+            if (menu.anti_aim.safe_knife:get_bool() and string.find(helpers.get_weapon_name(), "knife")) or (menu.anti_aim.safe_zeus:get_bool() and string.find(helpers.get_weapon_name(), "taser") )then
+                refs.yaw:set_int(1)
+                refs.target:set_int(1)
+                refs.yawadd:set_int(0)
+
+                refs.spin:set_int(0)
+                refs.jitter:set_int(0)
+                refs.fake:set_int(0)
+            else
+                return
+    
+            end
+        end
+    },
+    on_shot_registred = {},
+    on_frame_stage_notify = {},
+    on_run_command = {},
+    on_shutdown = {},
+    on_game_event = {},
+}
+
+
+
+
+function on_paint()
+    for k, v in pairs(callbacks.on_paint) do
+        v()
+        HYBRIDCL()
+    end
+end
+
+function on_create_move()
+    for k, v in pairs(callbacks.on_create_move) do
+        v()
+    end
+end
